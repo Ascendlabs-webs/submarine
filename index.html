@@ -2150,12 +2150,63 @@ const SEABED_GLB_BASE64 = "Z2xURgIAAAAkRB8AdB8AAEpTT057ImFzc2V0Ijp7ImdlbmVyYXRvc
   subRoot.add(headTargetR);
   headSpotR.target = headTargetR;
 
-  // Subtle volumetric light cones in front of headlamps
-  const coneGeo = new THREE.ConeGeometry(2.3, 15, 24, 1, true);
-  coneGeo.translate(0, -7.5, 0);
+  // Soft procedural sprite & beam textures for cinematic underwater atmospherics
+  function makeRadialGlowTex(size, stops) {
+    const cv = document.createElement("canvas");
+    cv.width = size; cv.height = size;
+    const cx = cv.getContext("2d");
+    const g = cx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    for (const [off, col] of stops) g.addColorStop(off, col);
+    cx.fillStyle = g;
+    cx.fillRect(0, 0, size, size);
+    const t = new THREE.CanvasTexture(cv);
+    t.needsUpdate = true;
+    return t;
+  }
+
+  function makeBeamFalloffTex() {
+    const cv = document.createElement("canvas");
+    cv.width = 64; cv.height = 256;
+    const cx = cv.getContext("2d");
+    const g = cx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, "rgba(180,235,255,0.92)");
+    g.addColorStop(0.28, "rgba(120,210,255,0.45)");
+    g.addColorStop(0.68, "rgba(70,175,235,0.12)");
+    g.addColorStop(1.0, "rgba(40,140,210,0.0)");
+    cx.fillStyle = g;
+    cx.fillRect(0, 0, 64, 256);
+    const t = new THREE.CanvasTexture(cv);
+    t.needsUpdate = true;
+    return t;
+  }
+
+  const snowSpriteTex = makeRadialGlowTex(64, [
+    [0.0, "rgba(215,245,255,1.0)"],
+    [0.35, "rgba(155,220,250,0.55)"],
+    [1.0, "rgba(80,175,230,0.0)"],
+  ]);
+  const smokeSpriteTex = makeRadialGlowTex(128, [
+    [0.0, "rgba(96,136,158,0.68)"],
+    [0.42, "rgba(56,92,114,0.34)"],
+    [0.78, "rgba(26,52,70,0.10)"],
+    [1.0, "rgba(10,24,36,0.0)"],
+  ]);
+  const bubbleSpriteTex = makeRadialGlowTex(64, [
+    [0.0, "rgba(120,210,255,0.08)"],
+    [0.58, "rgba(165,232,255,0.22)"],
+    [0.80, "rgba(235,252,255,0.88)"],
+    [0.92, "rgba(160,230,255,0.28)"],
+    [1.0, "rgba(100,200,255,0.0)"],
+  ]);
+  const beamFalloffTex = makeBeamFalloffTex();
+
+  // Subtle volumetric light cones in front of headlamps with smooth distance fade
+  const coneGeo = new THREE.ConeGeometry(2.45, 16, 28, 1, true);
+  coneGeo.translate(0, -8.0, 0);
   coneGeo.rotateX(-Math.PI / 2);
   const coneMat = new THREE.MeshBasicMaterial({
-    color: 0x66ccff,
+    color: 0x72d0ff,
+    map: beamFalloffTex,
     transparent: true,
     opacity: 0.0,
     blending: THREE.AdditiveBlending,
@@ -2184,20 +2235,53 @@ const SEABED_GLB_BASE64 = "Z2xURgIAAAAkRB8AdB8AAEpTT057ImFzc2V0Ijp7ImdlbmVyYXRvc
   oceanGroup.visible = false;
   scene.add(oceanGroup);
 
-  // Overhead dark nighttime ocean surface catching subtle moonlight far above (y = +46m)
-  const surfGeo = new THREE.PlaneGeometry(680, 680, 48, 48);
+  // Overhead dark nighttime ocean surface with animated swells catching moonlight far above (y = +46m)
+  const surfGeo = new THREE.PlaneGeometry(680, 680, 44, 44);
   surfGeo.rotateX(Math.PI / 2);
+  const surfBasePos = new Float32Array(surfGeo.attributes.position.array);
   const surfMat = new THREE.MeshStandardMaterial({
-    color: 0x020b16,
-    roughness: 0.32,
-    metalness: 0.55,
+    color: 0x031120,
+    emissive: 0x031424,
+    emissiveIntensity: 0.35,
+    roughness: 0.26,
+    metalness: 0.62,
     transparent: true,
-    opacity: 0.52,
+    opacity: 0.58,
     side: THREE.DoubleSide,
   });
   const oceanSurface = new THREE.Mesh(surfGeo, surfMat);
   oceanSurface.position.y = 46;
   oceanGroup.add(oceanSurface);
+
+  // Subtle descending moonlight volumetric shafts (god rays) piercing from the surface into upper abyss
+  const godRays = [];
+  const rayGeo = new THREE.ConeGeometry(7.5, 56, 18, 1, true);
+  rayGeo.translate(0, -28, 0);
+  const rayMat = new THREE.MeshBasicMaterial({
+    color: 0x2f7ca6,
+    map: beamFalloffTex,
+    transparent: true,
+    opacity: 0.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const rayCoords = [
+    [-26, 46, 22, 0.16, 0.12, 1.0],
+    [14, 46, 38, 0.14, 0.10, 1.25],
+    [-42, 46, -18, 0.18, 0.11, 0.9],
+    [36, 46, 86, 0.15, 0.13, 1.35],
+    [-12, 46, 72, 0.17, 0.09, 1.1],
+    [48, 46, -24, 0.13, 0.14, 0.95],
+  ];
+  rayCoords.forEach(([rx, ry, rz, rotX, rotZ, sc], idx) => {
+    const ray = new THREE.Mesh(rayGeo, rayMat);
+    ray.position.set(rx, ry, rz);
+    ray.rotation.set(rotX, 0, rotZ);
+    ray.scale.set(sc, 1.0, sc);
+    oceanGroup.add(ray);
+    godRays.push({ mesh: ray, bx: rx, bz: rz, baseRotX: rotX, baseRotZ: rotZ, phase: idx * 1.15 });
+  });
 
   // Expanding soft blue illumination wave shell that radiates outward on click
   const glowShellMat = new THREE.MeshBasicMaterial({
@@ -2225,38 +2309,53 @@ const SEABED_GLB_BASE64 = "Z2xURgIAAAAkRB8AdB8AAEpTT057ImFzc2V0Ijp7ImdlbmVyYXRvc
   const seabedContainer = new THREE.Group();
   oceanGroup.add(seabedContainer);
 
-  // Subtle rising translucent hydrothermal plumes above the midground twin chimneys (matching reference!)
+  // Billowy translucent hydrothermal smoke plumes + faint warm mineral core glow at twin chimneys
   const ventPlumes = [];
-  const plumeMat = new THREE.MeshBasicMaterial({
-    color: 0x3a647a,
-    transparent: true,
-    opacity: 0.16,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const plumeGeo = new THREE.SphereGeometry(0.65, 10, 8);
-  [[-5.8, 1.8, 30.0], [-2.0, -1.2, 28.8]].forEach(([vx, vy, vz]) => {
-    for (let k = 0; k < 8; k++) {
-      const m = new THREE.Mesh(plumeGeo, plumeMat);
-      m.position.set(vx, vy + k * 1.4, vz);
-      oceanGroup.add(m);
-      ventPlumes.push({ mesh: m, bx: vx, by: vy, bz: vz, phase: k / 8 });
+  const ventGlowLights = [];
+  [[-5.8, 1.6, 30.0, 1.15], [-2.0, -1.2, 28.8, 0.92]].forEach(([vx, vy, vz, scaleBase], vIdx) => {
+    const vLight = new THREE.PointLight(0xd96b27, 0.55, 7.2, 2.0);
+    vLight.position.set(vx, vy - 0.5, vz);
+    oceanGroup.add(vLight);
+    ventGlowLights.push({ light: vLight, phase: vIdx * 2.1 });
+    for (let k = 0; k < 14; k++) {
+      const spMat = new THREE.SpriteMaterial({
+        map: smokeSpriteTex,
+        color: k % 3 === 0 ? 0x5c8ba3 : 0x3b6075,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const sp = new THREE.Sprite(spMat);
+      sp.position.set(vx, vy + k * 0.85, vz);
+      oceanGroup.add(sp);
+      ventPlumes.push({
+        sprite: sp,
+        mat: spMat,
+        bx: vx,
+        by: vy,
+        bz: vz,
+        phase: k / 14,
+        driftSeed: vIdx * 7.3 + k * 1.9,
+        scaleBase,
+      });
     }
   });
 
-  // Drifting 3D marine snow & bioluminescent particles
-  const particleCount = 1300;
+  // Drifting 3D marine snow with soft circular sprite texture
+  const particleCount = 1400;
   const pGeo = new THREE.BufferGeometry();
   const pPos = new Float32Array(particleCount * 3);
   for (let i = 0; i < particleCount; i++) {
-    pPos[i * 3 + 0] = (Math.random() - 0.5) * 140;
-    pPos[i * 3 + 1] = -12 + Math.random() * 44;
-    pPos[i * 3 + 2] = (Math.random() - 0.5) * 140;
+    pPos[i * 3 + 0] = (Math.random() - 0.5) * 150;
+    pPos[i * 3 + 1] = -12 + Math.random() * 46;
+    pPos[i * 3 + 2] = (Math.random() - 0.5) * 150;
   }
   pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
   const pMat = new THREE.PointsMaterial({
-    color: 0x7adfff,
-    size: 0.18,
+    color: 0x9ce4ff,
+    map: snowSpriteTex,
+    size: 0.34,
     transparent: true,
     opacity: 0.0,
     blending: THREE.AdditiveBlending,
@@ -2264,6 +2363,150 @@ const SEABED_GLB_BASE64 = "Z2xURgIAAAAkRB8AdB8AAEpTT057ImFzc2V0Ijp7ImdlbmVyYXRvc
   });
   const particles = new THREE.Points(pGeo, pMat);
   oceanGroup.add(particles);
+
+  // Shimmering bioluminescent plankton motes (cyan, sea-green, ice-violet) drifting in subtle currents
+  const bioCount = 300;
+  const bioGeo = new THREE.BufferGeometry();
+  const bioPos = new Float32Array(bioCount * 3);
+  const bioCol = new Float32Array(bioCount * 3);
+  const bioPalette = [
+    new THREE.Color(0x38f2ff),
+    new THREE.Color(0x42ffb8),
+    new THREE.Color(0x6eb4ff),
+    new THREE.Color(0x8c7aff),
+  ];
+  for (let i = 0; i < bioCount; i++) {
+    bioPos[i * 3 + 0] = (Math.random() - 0.5) * 130;
+    bioPos[i * 3 + 1] = -10 + Math.random() * 34;
+    bioPos[i * 3 + 2] = (Math.random() - 0.5) * 130;
+    const c = bioPalette[i % bioPalette.length];
+    bioCol[i * 3 + 0] = c.r;
+    bioCol[i * 3 + 1] = c.g;
+    bioCol[i * 3 + 2] = c.b;
+  }
+  bioGeo.setAttribute("position", new THREE.BufferAttribute(bioPos, 3));
+  bioGeo.setAttribute("color", new THREE.BufferAttribute(bioCol, 3));
+  const bioMat = new THREE.PointsMaterial({
+    map: snowSpriteTex,
+    size: 0.56,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const bioParticles = new THREE.Points(bioGeo, bioMat);
+  oceanGroup.add(bioParticles);
+
+  // Speed-reactive propeller cavitation bubble trail emitted behind JARVIS
+  const bubblePool = [];
+  const BUBBLE_COUNT = 80;
+  for (let i = 0; i < BUBBLE_COUNT; i++) {
+    const bMat = new THREE.SpriteMaterial({
+      map: bubbleSpriteTex,
+      color: 0xc2ecff,
+      transparent: true,
+      opacity: 0.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const bSp = new THREE.Sprite(bMat);
+    bSp.visible = false;
+    oceanGroup.add(bSp);
+    bubblePool.push({
+      sprite: bSp,
+      mat: bMat,
+      vx: 0, vy: 0, vz: 0,
+      age: 99, maxAge: 1.8, size: 0.16, seed: Math.random() * 10,
+    });
+  }
+  let bubbleCursor = 0;
+  let bubbleEmitAccum = 0;
+  const propWorldPos = new THREE.Vector3();
+
+  // Ethereal bioluminescent deep-sea jellyfish gently pulsing in midwater
+  const jellyGroup = new THREE.Group();
+  oceanGroup.add(jellyGroup);
+  const jellyList = [];
+  const jellyBellPts = [
+    new THREE.Vector2(0.00, 0.55),
+    new THREE.Vector2(0.24, 0.52),
+    new THREE.Vector2(0.48, 0.36),
+    new THREE.Vector2(0.62, 0.12),
+    new THREE.Vector2(0.64, -0.06),
+    new THREE.Vector2(0.54, -0.10),
+  ];
+  const jellyBellGeo = new THREE.LatheGeometry(jellyBellPts, 20);
+  const jellySpecs = [
+    { x: -16, y: 4.5, z: 24, sc: 0.95, col: 0x38d8ff, core: 0x7ef6ff, ph: 0.0 },
+    { x: 19,  y: 7.2, z: 42, sc: 1.15, col: 0x6b7cff, core: 0xa6c4ff, ph: 1.3 },
+    { x: -24, y: 2.8, z: 62, sc: 0.85, col: 0x2ef0c4, core: 0x8effdf, ph: 2.5 },
+    { x: 28,  y: 5.0, z: 88, sc: 1.05, col: 0x4ec8ff, core: 0x9ae4ff, ph: 3.7 },
+    { x: -32, y: 8.5, z: 12, sc: 1.20, col: 0x7c6cff, core: 0xbcb0ff, ph: 4.8 },
+    { x: 14,  y: 3.6, z: -26, sc: 0.88, col: 0x38e4ff, core: 0x8ef2ff, ph: 5.6 },
+  ];
+  jellySpecs.forEach((js) => {
+    const jRoot = new THREE.Group();
+    jRoot.position.set(js.x, js.y, js.z);
+    jRoot.scale.setScalar(js.sc);
+    const bellMat = new THREE.MeshBasicMaterial({
+      color: js.col,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const bell = new THREE.Mesh(jellyBellGeo, bellMat);
+    jRoot.add(bell);
+
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 12, 10),
+      new THREE.MeshBasicMaterial({
+        color: js.core,
+        transparent: true,
+        opacity: 0.48,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    core.position.y = 0.16;
+    jRoot.add(core);
+
+    const tentacles = [];
+    const tentMat = new THREE.LineBasicMaterial({
+      color: js.core,
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    for (let t = 0; t < 6; t++) {
+      const ang = (t / 6) * Math.PI * 2;
+      const rad = 0.22 + (t % 2) * 0.14;
+      const segs = 7;
+      const pts = [];
+      for (let s = 0; s <= segs; s++) {
+        pts.push(new THREE.Vector3(Math.cos(ang) * rad, -0.05 - s * 0.28, Math.sin(ang) * rad));
+      }
+      const tg = new THREE.BufferGeometry().setFromPoints(pts);
+      const line = new THREE.Line(tg, tentMat);
+      jRoot.add(line);
+      tentacles.push({ geo: tg, ang, rad, segs, offset: t * 0.9 });
+    }
+    jellyGroup.add(jRoot);
+    jellyList.push({
+      root: jRoot,
+      bell,
+      core,
+      tentacles,
+      bx: js.x,
+      by: js.y,
+      bz: js.z,
+      sc: js.sc,
+      ph: js.ph,
+    });
+  });
 
   // GLB Wildlife & Sunken Steel Shipwreck Containers (populated when GLBs parse)
   const fishGroup = new THREE.Group();
@@ -3296,7 +3539,9 @@ const SEABED_GLB_BASE64 = "Z2xURgIAAAAkRB8AdB8AAEpTT057ImFzc2V0Ijp7ImdlbmVyYXRvc
       rimLight.intensity = 0.06 + e * 0.20;
       heroPoolLight.intensity = 5.4 - e * 4.85;
       heroRimLight.intensity = 0.78 - e * 0.64;
-      pMat.opacity = e * 0.52;
+      pMat.opacity = e * 0.56;
+      bioMat.opacity = e * 0.62;
+      rayMat.opacity = e * 0.036;
 
       const bgCol = new THREE.Color(0x010205).lerp(new THREE.Color(0x010811), e);
       scene.background = bgCol;
@@ -3388,26 +3633,146 @@ const SEABED_GLB_BASE64 = "Z2xURgIAAAAkRB8AdB8AAEpTT057ImFzc2V0Ijp7ImdlbmVyYXRvc
       propellerMesh.rotation.z += spinRate * dt;
     }
 
-    // Animate ocean wildlife & marine snow
+    // Animate ocean wildlife, currents, surface swells, god rays, hydrothermal smoke, bubbles & jellyfish
     if (oceanGroup.visible) {
-      // Drifting marine snow wraps in a 120m volume around the submersible for crisp motion parallax
+      // Gently undulating overhead nighttime ocean surface swells
+      const spAttr = surfGeo.attributes.position;
+      for (let i = 0; i < spAttr.count; i++) {
+        const bx = surfBasePos[i * 3];
+        const bz = surfBasePos[i * 3 + 2];
+        const wy = Math.sin(bx * 0.032 + now * 0.72) * 1.15 + Math.cos(bz * 0.028 - now * 0.58) * 0.95;
+        spAttr.setY(i, wy);
+      }
+      spAttr.needsUpdate = true;
+
+      // Subtle swaying descending moonlight shafts
+      if (illuminateProgress >= 1) {
+        rayMat.opacity = 0.032 + Math.sin(now * 0.45) * 0.008;
+      }
+      for (const gr of godRays) {
+        gr.mesh.rotation.x = gr.baseRotX + Math.sin(now * 0.32 + gr.phase) * 0.025;
+        gr.mesh.rotation.z = gr.baseRotZ + Math.cos(now * 0.28 + gr.phase) * 0.025;
+      }
+
+      // Drifting marine snow wraps in a 150m volume around JARVIS with gentle deep-sea current sway
       const pp = pGeo.attributes.position;
       const sx = subRoot.position.x, sz = subRoot.position.z;
+      const driftX = Math.sin(now * 0.22) * 0.22 * dt;
+      const driftZ = Math.cos(now * 0.18) * 0.16 * dt;
       for (let i = 0; i < particleCount; i++) {
-        let x = pp.getX(i);
-        let y = pp.getY(i) - dt * 0.24;
-        let z = pp.getZ(i);
-        if (y < -13) y = 30;
-        if (x - sx > 90) x -= 180; else if (x - sx < -90) x += 180;
-        if (z - sz > 90) z -= 180; else if (z - sz < -90) z += 180;
+        let x = pp.getX(i) + driftX;
+        let y = pp.getY(i) - dt * 0.22;
+        let z = pp.getZ(i) + driftZ;
+        if (y < -12) y = 34;
+        if (x - sx > 75) x -= 150; else if (x - sx < -75) x += 150;
+        if (z - sz > 75) z -= 150; else if (z - sz < -75) z += 150;
         pp.setXYZ(i, x, y, z);
       }
       pp.needsUpdate = true;
+
+      // Shimmering bioluminescent plankton motes swirling slowly around the vessel
+      const bp = bioGeo.attributes.position;
+      if (illuminateProgress >= 1) {
+        bioMat.opacity = 0.52 + Math.sin(now * 1.35) * 0.14;
+      }
+      for (let i = 0; i < bioCount; i++) {
+        let x = bp.getX(i) + Math.sin(now * 0.4 + i) * 0.14 * dt;
+        let y = bp.getY(i) + Math.cos(now * 0.35 + i * 0.7) * 0.12 * dt;
+        let z = bp.getZ(i) + Math.cos(now * 0.38 + i * 1.3) * 0.14 * dt;
+        if (y < -10) y = 24; else if (y > 24) y = -10;
+        if (x - sx > 65) x -= 130; else if (x - sx < -65) x += 130;
+        if (z - sz > 65) z -= 130; else if (z - sz < -65) z += 130;
+        bp.setXYZ(i, x, y, z);
+      }
+      bp.needsUpdate = true;
+
+      // Billowy rising hydrothermal smoke plumes & subtle flickering vent core glow
+      for (const vg of ventGlowLights) {
+        vg.light.intensity = (0.42 + Math.sin(now * 3.1 + vg.phase) * 0.12 + Math.sin(now * 7.4 + vg.phase) * 0.06) * illuminateProgress;
+      }
       for (const vp of ventPlumes) {
-        const t = (now * 0.16 + vp.phase) % 1.0;
-        vp.mesh.position.set(vp.bx + Math.sin(now * 0.9 + vp.phase * 6) * 0.45 * t, vp.by + t * 11.5, vp.bz);
-        const sc = 0.55 + t * 2.1;
-        vp.mesh.scale.set(sc, sc * 1.4, sc);
+        const t = (now * 0.13 + vp.phase) % 1.0;
+        const swayX = Math.sin(now * 0.75 + vp.driftSeed) * (0.25 + t * 1.35);
+        const swayZ = Math.cos(now * 0.62 + vp.driftSeed) * (0.20 + t * 1.05);
+        vp.sprite.position.set(vp.bx + swayX, vp.by + t * 13.5, vp.bz + swayZ);
+        const sc = vp.scaleBase * (1.15 + t * 4.6);
+        vp.sprite.scale.set(sc, sc * 1.18, 1);
+        const fade = Math.sin(t * Math.PI);
+        vp.mat.opacity = fade * fade * 0.28 * illuminateProgress;
+      }
+
+      // Speed-reactive propeller cavitation bubble trail
+      const absSpd = Math.abs(speed);
+      if (illuminated && absSpd > 0.25) {
+        bubbleEmitAccum += dt * (8 + absSpd * 3.4);
+        propWorldPos.set(0, -0.02 + bobY, -5.85);
+        subRoot.localToWorld(propWorldPos);
+        while (bubbleEmitAccum >= 1.0) {
+          bubbleEmitAccum -= 1.0;
+          const b = bubblePool[bubbleCursor];
+          bubbleCursor = (bubbleCursor + 1) % BUBBLE_COUNT;
+          b.sprite.position.set(
+            propWorldPos.x + (Math.random() - 0.5) * 0.42,
+            propWorldPos.y + (Math.random() - 0.5) * 0.36,
+            propWorldPos.z + (Math.random() - 0.5) * 0.42
+          );
+          b.vx = (Math.random() - 0.5) * 0.55;
+          b.vy = 0.55 + Math.random() * 0.75;
+          b.vz = (Math.random() - 0.5) * 0.55;
+          b.age = 0;
+          b.maxAge = 1.4 + Math.random() * 1.3;
+          b.size = 0.08 + Math.random() * 0.16;
+          b.sprite.visible = true;
+        }
+      }
+      for (const b of bubblePool) {
+        if (!b.sprite.visible) continue;
+        b.age += dt;
+        if (b.age >= b.maxAge) {
+          b.sprite.visible = false;
+          continue;
+        }
+        const frac = b.age / b.maxAge;
+        b.sprite.position.x += (b.vx + Math.sin(now * 4.2 + b.seed) * 0.22) * dt;
+        b.sprite.position.y += b.vy * dt;
+        b.sprite.position.z += (b.vz + Math.cos(now * 3.7 + b.seed) * 0.22) * dt;
+        const sc = b.size * (0.7 + frac * 1.15);
+        b.sprite.scale.set(sc, sc, 1);
+        b.mat.opacity = Math.sin(frac * Math.PI) * 0.52;
+      }
+
+      // Ethereal bioluminescent deep-sea jellyfish gently pulsing & drifting in midwater
+      for (const j of jellyList) {
+        const pulse = Math.sin(now * 1.55 + j.ph);
+        const contract = 0.5 + 0.5 * pulse;
+        j.root.position.set(
+          j.bx + Math.sin(now * 0.18 + j.ph) * 2.2,
+          j.by + Math.sin(now * 0.42 + j.ph) * 1.4 + contract * 0.22,
+          j.bz + Math.cos(now * 0.15 + j.ph) * 2.2
+        );
+        j.root.rotation.z = Math.sin(now * 0.35 + j.ph) * 0.12;
+        const sXZ = 1.0 - contract * 0.16;
+        const sY = 0.94 + contract * 0.20;
+        j.bell.scale.set(sXZ, sY, sXZ);
+        j.core.scale.setScalar(0.88 + contract * 0.24);
+        const dCam = Math.hypot(j.root.position.x - camera.position.x, j.root.position.z - camera.position.z);
+        if (dCam < 72) {
+          for (const tn of j.tentacles) {
+            const pos = tn.geo.attributes.position;
+            for (let s = 1; s <= tn.segs; s++) {
+              const lag = s * 0.55;
+              const sway = Math.sin(now * 1.9 + j.ph + tn.offset - lag) * (0.06 * s);
+              const swayZ = Math.cos(now * 1.5 + j.ph + tn.offset - lag) * (0.05 * s);
+              pos.setXYZ(
+                s,
+                Math.cos(tn.ang) * tn.rad * sXZ + sway,
+                -0.05 - s * 0.28,
+                Math.sin(tn.ang) * tn.rad * sXZ + swayZ
+              );
+            }
+            pos.needsUpdate = true;
+          }
+        }
       }
 
       // Animate 3 loosely spaced GLB fish schools with staggered turns & distance LOD
